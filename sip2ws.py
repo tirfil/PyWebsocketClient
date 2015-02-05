@@ -16,7 +16,6 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
 SERVER_HOST, SERVER_PORT = '0.0.0.0', 5060
 CLIENT_HOST, CLIENT_PORT = '172.26.158.24', 5060
 
@@ -25,11 +24,12 @@ import SocketServer
 import re
 import socket
 import threading
+import string
 
 rx_via = re.compile("^Via:")
 rx_contact = re.compile("^Contact:")
 rx_viaproto = re.compile("SIP/2.0/([^ ]*)")
-rx_transportproto = re.compile("transport=([^;$]*)")
+rx_transportproto = re.compile("transport=([^;$>]*)")
 
 context = {}
 
@@ -45,16 +45,9 @@ class WSListener(threading.Thread):
         
 
 class UDPHandler(SocketServer.BaseRequestHandler): 
-    """
-    def __init__(self, request, client_address, server):
-        print "UDPHandler init"
-        self.connect()
-        SocketServer.BaseRequestHandler.__init__(self, request, client_address, server)
-    """
         
-    def connect(self):
+    def _connect(self):
         # open client socket
-        self.handshaking = False
         self.csock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.csock.connect((CLIENT_HOST,CLIENT_PORT))
         thread = WSListener(self.csock,self)
@@ -75,7 +68,7 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         else:
             print "handshake request issue"
             
-    def convert(self,data,proto):
+    def _filter(self,data,proto):
         list = data.split("\r\n")
         size = len(list)
         for index in range(size):
@@ -84,12 +77,14 @@ class UDPHandler(SocketServer.BaseRequestHandler):
                 md = rx_viaproto.search(line)
                 if md:
                     p = md.group(1)
-                    list[index] = line.replace(p,proto)
+                    list[index] = line.replace(p,string.upper(proto))
             if rx_contact.search(line) or (index == 0):
                 md = rx_transportproto.search(line)
                 if md:
-                    p = md.group(1)
-                    list[index] = line.replace(p,proto)
+                    p = md.group(0)
+                    proto1 = "transport=%s" % proto
+                    list[index] = line.replace(p,string.lower(proto1))
+        #list.append("")
         return "\r\n".join(list)
         
     def receive(self,data):
@@ -97,14 +92,14 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             self.ws.dataRecv(data)
             status = self.ws.status()
             if status == 1:
-                self.handshaking = True
                 print "handshake OK"
             elif status == 2:
                 print "handshake NOK"
             elif status == 8:
                 wsdata = self.ws.result()
-                wsdata = self.convert(wsdata,"UDP")
-                print "received: \n %s" % wsdata
+                wsdata = self._filter(wsdata,"UDP")
+                print "received: \n%s" % wsdata
+                #print self.client_address
                 self.socket.sendto(wsdata,self.client_address)
                 
     def handle(self):
@@ -113,14 +108,15 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             return
         print "UDPHandler handle"
         self.socket = self.request[1]
+        #print self.client_address
         if not context.has_key(self.client_address):
-            self.connect()
+            self._connect()
         else:
             (self.csock,self.ws) = context[self.client_address]
-            data = self.convert(data,"WS")
+            data = self._filter(data,"WS")
             self.ws.sendData(data)
-            print "send:\n %s" % data
             if self.ws.status() == 3:
+                print "send:\n%s" % data
                 wsdata = self.ws.result()
                 self.csock.send(wsdata)
 
