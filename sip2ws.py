@@ -16,6 +16,22 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+
+# This module is a bidirectional SIP UDP to Websocket converter
+
+"""
+-----------------           -----------
+           |     |         |           |<========> Softphone SIP/UDP
+SIP server | WS  |<=======>| sip2ws.py |<========> Softphone SIP/UDP
+or proxy   | port|         |           |<========> Softphone SIP/UDP
+           |     |         |           |<========> Softphone SIP/UDP
+-----------------           -----------
+"""
+
+# Configuration
+# -----------------------------------------------------
+# Softphone: UDP - proxy = SERVER_HOST:SERVER_PORT
+# SIP server: websocket port = CLIENT_HOST:CLIENT_PORT
 SERVER_HOST, SERVER_PORT = '0.0.0.0', 5060
 CLIENT_HOST, CLIENT_PORT = '172.26.158.24', 5060
 
@@ -96,11 +112,25 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             elif status == 2:
                 print "handshake NOK"
             elif status == 8:
+                # receive decoded frame 
                 wsdata = self.ws.result()
                 wsdata = self._filter(wsdata,"UDP")
                 print "received: \n%s" % wsdata
                 #print self.client_address
                 self.socket.sendto(wsdata,self.client_address)
+            elif status == 4:
+                # sending PONG
+                print "received PING - sending PONG"
+                wsdata = self.ws.result()
+                self.csock.send(wsdata)
+            elif status == 5:
+                # sending CLOSE
+                print "received CLOSE - sending CLOSE"
+                wsdata = self.ws.result()
+                self.csock.send(wsdata)
+                del context[self.client_address]
+            else:
+                print "receive: unexpected status = %d" % status
                 
     def handle(self):
         data = self.request[0]
