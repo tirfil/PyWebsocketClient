@@ -179,13 +179,6 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             self._connect()
         else:
             (self.csock,self.ws) = context[self.client_address]
-                        
-            """
-            list = self._data2list(data)
-            list.insert(1,recordroute)
-            #list.insert(1,)
-            data = self._list2data(list)
-            """     
             data = self._filter(data,"WS")
             self.ws.sendData(data)
             if self.ws.status() == 3:
@@ -198,6 +191,8 @@ if __name__ == "__main__":
     print hostname
     ipaddress = socket.gethostbyname(hostname)
     print ipaddress
+    if ipaddress == "127.0.0.1":
+        ipaddress = sys.argv[1]
     recordroute = "Record-Route: <sip:%s:%d;lr>" % (ipaddress,SERVER_PORT)
     #topvia = "Via: SIP/2.0/UDP %s:%d" % (ipaddress,SERVER_PORT)
     server = SocketServer.UDPServer((SERVER_HOST, SERVER_PORT), UDPHandler)
