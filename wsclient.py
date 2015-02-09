@@ -65,6 +65,15 @@ rx_kv = re.compile("^([^:]*): (.*)")
 guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 hsRequest = [ "GET / HTTP/1.1", "Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Version: 13" ]
 
+def hexdump( chars, sep, width ):
+    while chars:
+        line = chars[:width]
+        chars = chars[width:]
+        line = line.ljust( width, '\000' )
+        print("%s%s%s" % ( sep.join( "%02x" % ord(c) for c in line ),sep, quotechars( line )))
+def quotechars( chars ):
+    return ''.join( ['.', c][c.isalnum()] for c in chars )
+
 class wsclient:
     def __init__(self):
         self.readyState = 0
@@ -209,6 +218,13 @@ class wsclient:
             final = False
         opcode = frame[0] & 0x0f
         print "Opcode 0x%02x" % opcode
+        
+        if not opcode in [0x0,0x1,0x2,0x8,0x9,0xa]:
+            print "frame error:"
+            hexadump(buffer,' ',16)
+            self._status=0
+            return
+            
         if opcode > 0x7:
             control = True
         else:

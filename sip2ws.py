@@ -50,6 +50,7 @@ rx_viaproto = re.compile("SIP/2.0/([^ ]*)")
 rx_transportproto = re.compile("transport=([^;$> ]*)")
 
 rx_received = re.compile("received=")
+rx_route = re.compile("^Route:")
 
 context = {}
 recordroute = ""
@@ -108,7 +109,7 @@ class UDPHandler(SocketServer.BaseRequestHandler):
     def _list2data(self,list):
         return "\r\n".join(list)
             
-    def _filter(self,data,proto):
+    def _filter_proto(self,data,proto):
         #list = data.split("\r\n")
         list = self._data2list(data)
         size = len(list)
@@ -119,7 +120,15 @@ class UDPHandler(SocketServer.BaseRequestHandler):
                 if md:
                     p = md.group(1)
                     list[index] = line.replace(p,string.upper(proto))
-            if (index == 0) or rx_contact.search(line) or rx_record_route.search(line):
+            if (index == 0):
+                md = rx_transportproto.search(line)
+                if md:
+                    p = md.group(0)
+                    proto1 = "transport=%s" % proto
+                    list[index] = line.replace(p,string.lower(proto1))
+                #else:
+                #    list[index] = line.replace(" SIP/2.0",";transport=%s SIP/2.0" % string.lower(proto))
+            if rx_contact.search(line) or rx_record_route.search(line):
                 md = rx_transportproto.search(line)
                 if md:
                     p = md.group(0)
@@ -129,7 +138,7 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         #return "\r\n".join(list)
         return self._list2data(list)
     
-    def _clean_headers(self,data):
+    def _clean_headers_receive(self,data):
         # record-route and top via
         vias = []
         listin = self._data2list(data)
@@ -155,6 +164,15 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         listout.insert(1,recordroute)
         return self._list2data(listout)
         
+    def _clean_headers_send(self,data):
+        listin = self._data2list(data)
+        listout = []
+        for line in listin:
+            # erase route and record-route header
+            if not rx_route.search(line) and not rx_record_route.search(line):
+                listout.append(line)
+        return self._list2data(listout)
+        
     def receive(self,data):
         if self.ws:
             self.ws.dataRecv(data)
@@ -166,8 +184,8 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             elif status == 8:
                 # receive decoded frame 
                 wsdata = self.ws.result()
-                wsdata = self._clean_headers(wsdata)
-                wsdata = self._filter(wsdata,"UDP")
+                wsdata = self._clean_headers_receive(wsdata)
+                wsdata = self._filter_proto(wsdata,"UDP")
                 print "received: \n%s" % wsdata
                 #print self.client_address
                 self.socket.sendto(wsdata,self.client_address)
@@ -197,7 +215,8 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         else:
             (self.csock,self.ws) = context[self.client_address]
             if self.ws.state() > 0:
-                data = self._filter(data,"WS")
+                data = self._clean_headers_send(data)
+                data = self._filter_proto(data,"WS")
                 self.ws.sendData(data)
                 if self.ws.status() == 3:
                     print "send:\n%s" % data
