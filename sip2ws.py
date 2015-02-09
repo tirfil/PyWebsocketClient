@@ -33,7 +33,7 @@ or proxy   | port|         |           |<========> Softphone SIP/UDP
 # Softphone: UDP - proxy = SERVER_HOST:SERVER_PORT
 # SIP server: websocket port = CLIENT_HOST:CLIENT_PORT
 SERVER_HOST, SERVER_PORT = '0.0.0.0', 8060
-CLIENT_HOST, CLIENT_PORT = '172.26.158.24', 5060
+CLIENT_HOST, CLIENT_PORT = '172.26.174.134', 5262
 
 import wsclient
 import SocketServer
@@ -41,6 +41,7 @@ import re
 import socket
 import threading
 import string
+import sys
 
 rx_via = re.compile("^Via:")
 rx_contact = re.compile("^Contact:")
@@ -48,9 +49,13 @@ rx_record_route = re.compile("^Record-Route:")
 rx_viaproto = re.compile("SIP/2.0/([^ ]*)")
 rx_transportproto = re.compile("transport=([^;$> ]*)")
 
+rx_received = re.compile("received=")
+
 context = {}
 recordroute = ""
 #topvia = ""
+ipaddress = ""
+port=""
 
 class WSListener(threading.Thread):
     def __init__(self,csock,parent):
@@ -60,15 +65,24 @@ class WSListener(threading.Thread):
     def run(self):
         while(True):
             data = self.csock.recv(4096)
-            self.parent.receive(data)
+            if len(data) > 4:
+                self.parent.receive(data)
         
 
 class UDPHandler(SocketServer.BaseRequestHandler): 
         
     def _connect(self):
         # open client socket
-        self.csock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.csock.connect((CLIENT_HOST,CLIENT_PORT))
+        try:
+            self.csock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except socket.error:
+            print 'Failed to create socket'
+            return
+        try:
+            self.csock.connect((CLIENT_HOST,CLIENT_PORT))
+        except:
+            print 'Cannot connect'
+            return
         thread = WSListener(self.csock,self)
         thread.daemon = True
         thread.start()
@@ -134,6 +148,9 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         vias.reverse()
         for str in vias:
             listout.insert(1,str)
+        # add received= if needed
+        if not rx_received.search(listout[1]):
+            listout[1] += ";rport=%s;received=%s" % (port,ipaddress)
         # insert record-route
         listout.insert(1,recordroute)
         return self._list2data(listout)
@@ -179,12 +196,13 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             self._connect()
         else:
             (self.csock,self.ws) = context[self.client_address]
-            data = self._filter(data,"WS")
-            self.ws.sendData(data)
-            if self.ws.status() == 3:
-                print "send:\n%s" % data
-                wsdata = self.ws.result()
-                self.csock.send(wsdata)
+            if self.ws.state() > 0:
+                data = self._filter(data,"WS")
+                self.ws.sendData(data)
+                if self.ws.status() == 3:
+                    print "send:\n%s" % data
+                    wsdata = self.ws.result()
+                    self.csock.send(wsdata)
 
 if __name__ == "__main__":
     hostname = socket.gethostname()
@@ -194,6 +212,7 @@ if __name__ == "__main__":
     if ipaddress == "127.0.0.1":
         ipaddress = sys.argv[1]
     recordroute = "Record-Route: <sip:%s:%d;lr>" % (ipaddress,SERVER_PORT)
+    port = SERVER_PORT
     #topvia = "Via: SIP/2.0/UDP %s:%d" % (ipaddress,SERVER_PORT)
     server = SocketServer.UDPServer((SERVER_HOST, SERVER_PORT), UDPHandler)
     server.serve_forever()

@@ -116,6 +116,7 @@ class wsclient:
             header = "Sec-WebSocket-Key: %s" % self.key
             request.append(header)
         request.append("")
+        request.append("")
         self._result = "\r\n".join(request)
         print self._result
         self._status = 6
@@ -133,6 +134,8 @@ class wsclient:
     def processHandshakeResponse(self,buffer):
         # HTTP/1.1 101 Switching Protocols
         error = False
+        print "handshake response:\n%s" % buffer
+        print "-----------------------"
         lines=string.split(buffer,"\r\n")
         start = True
         for line in lines:
