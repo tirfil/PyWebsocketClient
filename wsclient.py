@@ -221,7 +221,7 @@ class wsclient:
         
         if not opcode in [0x0,0x1,0x2,0x8,0x9,0xa]:
             print "frame error:"
-            hexadump(buffer,' ',16)
+            hexdump(buffer,' ',16)
             self._status=0
             return
             

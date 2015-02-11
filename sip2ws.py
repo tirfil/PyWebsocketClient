@@ -52,11 +52,14 @@ rx_transportproto = re.compile("transport=([^;$> ]*)")
 rx_received = re.compile("received=")
 rx_route = re.compile("^Route:")
 
+rx_branch = re.compile("branch=([^;$ ]*)")
+rx_response = re.compile("^SIP/2.0");
+rx_rport = re.compile("rport$")
+
 context = {}
-recordroute = ""
+#recordroute = ""
 #topvia = ""
 ipaddress = ""
-port=""
 
 class WSListener(threading.Thread):
     def __init__(self,csock,parent):
@@ -137,42 +140,30 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         #list.append("")
         #return "\r\n".join(list)
         return self._list2data(list)
-    
-    def _clean_headers_receive(self,data):
-        # record-route and top via
-        vias = []
+        
+        
+        
+    def _process_headers(self,data,address,send):
         listin = self._data2list(data)
         listout = []
-        for line in listin:
-            # erase all record-route
-            if rx_record_route.search(line):
-                pass
-            elif rx_via.search(line):
-                vias.append(line)
-            else:
-                listout.append(line)
-        # erase top via except if only one
-        if len(vias) > 1:
-            vias.pop(0)
-        vias.reverse()
-        for str in vias:
-            listout.insert(1,str)
-        # add received= if needed
-        if not rx_received.search(listout[1]):
-            listout[1] += ";rport=%s;received=%s" % (port,ipaddress)
-        # insert record-route
-        listout.insert(1,recordroute)
+        if send:
+            for line in listin:
+                if not rx_route.search(line) and not rx_record_route.search(line):
+                    listout.append(line)
+        else:
+            topvia = True
+            for line in listin:
+                if topvia and rx_via.search(line):
+                    topvia = False
+                    if not rx_received.search(line):
+                        line += ";received=%s;rport=%d" % address
+                    listout.append(line)
+                elif not rx_route.search(line) and not rx_record_route.search(line):
+                    listout.append(line)
+            rr = "Record-Route: <sip:%s:%d;lr>" % address
+            listout.insert(1,rr)
         return self._list2data(listout)
-        
-    def _clean_headers_send(self,data):
-        listin = self._data2list(data)
-        listout = []
-        for line in listin:
-            # erase route and record-route header
-            if not rx_route.search(line) and not rx_record_route.search(line):
-                listout.append(line)
-        return self._list2data(listout)
-        
+
     def receive(self,data):
         if self.ws:
             self.ws.dataRecv(data)
@@ -184,7 +175,8 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             elif status == 8:
                 # receive decoded frame 
                 wsdata = self.ws.result()
-                wsdata = self._clean_headers_receive(wsdata)
+                #address = self.csock.getsockname()
+                wsdata = self._process_headers(wsdata,(ipaddress,SERVER_PORT),False)
                 wsdata = self._filter_proto(wsdata,"UDP")
                 print "received: \n%s" % wsdata
                 #print self.client_address
@@ -215,7 +207,8 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         else:
             (self.csock,self.ws) = context[self.client_address]
             if self.ws.state() > 0:
-                data = self._clean_headers_send(data)
+                address = self.csock.getsockname()
+                data = self._process_headers(data,address,True)
                 data = self._filter_proto(data,"WS")
                 self.ws.sendData(data)
                 if self.ws.status() == 3:
@@ -230,8 +223,5 @@ if __name__ == "__main__":
     print ipaddress
     if ipaddress == "127.0.0.1":
         ipaddress = sys.argv[1]
-    recordroute = "Record-Route: <sip:%s:%d;lr>" % (ipaddress,SERVER_PORT)
-    port = SERVER_PORT
-    #topvia = "Via: SIP/2.0/UDP %s:%d" % (ipaddress,SERVER_PORT)
     server = SocketServer.UDPServer((SERVER_HOST, SERVER_PORT), UDPHandler)
     server.serve_forever()
