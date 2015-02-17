@@ -141,8 +141,6 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         #return "\r\n".join(list)
         return self._list2data(list)
         
-        
-        
     def _process_headers(self,data,address,send):
         listin = self._data2list(data)
         listout = []
